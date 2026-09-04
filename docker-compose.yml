@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: promptlib
+      POSTGRES_USER: promptlib
+      POSTGRES_PASSWORD: promptlib
+    ports:
+      - "5432:5432"
+    volumes:
+      - promptlib-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U promptlib"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  promptlib-data:
