@@ -1,6 +1,7 @@
 package de.marinic.promptlib.prompt;
 
 import de.marinic.promptlib.prompt.dto.PromptResponse;
+import de.marinic.promptlib.prompt.dto.VersionResponse;
 import de.marinic.promptlib.tag.Tag;
 import java.util.Set;
 import java.util.TreeSet;
@@ -22,5 +23,14 @@ public final class PromptMapper {
                 tagNames,
                 prompt.getCreatedAt(),
                 prompt.getUpdatedAt());
+    }
+
+    public static VersionResponse toVersionResponse(PromptVersion version) {
+        return new VersionResponse(
+                version.getVersionNo(),
+                version.getContent(),
+                version.getParameters(),
+                version.getNotes(),
+                version.getCreatedAt());
     }
 }

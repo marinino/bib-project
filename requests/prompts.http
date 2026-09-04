@@ -32,6 +32,24 @@ Content-Type: application/json
 ### Alle Tags mit Anzahl
 GET http://localhost:8080/api/v1/tags
 
+### Neue Version anlegen
+POST http://localhost:8080/api/v1/prompts/{{promptId}}/versions
+Content-Type: application/json
+
+{
+  "content": "Ein Video von {{subject}}, cinematic style, 4k",
+  "notes": "Auflösung ergänzt"
+}
+
+### Alle Versionen (absteigend)
+GET http://localhost:8080/api/v1/prompts/{{promptId}}/versions
+
+### Einzelne Version
+GET http://localhost:8080/api/v1/prompts/{{promptId}}/versions/1
+
+### Version aktivieren
+POST http://localhost:8080/api/v1/prompts/{{promptId}}/versions/2/activate
+
 ### Prompt löschen
 DELETE http://localhost:8080/api/v1/prompts/{{promptId}}
 
