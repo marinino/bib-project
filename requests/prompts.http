@@ -1,0 +1,39 @@
+### Prompt erstellen
+POST http://localhost:8080/api/v1/prompts
+Content-Type: application/json
+
+{
+  "title": "Video Prompt",
+  "description": "Für ComfyUI Workflows",
+  "content": "Ein Video von {{subject}}, cinematic style",
+  "tags": ["comfyui", "cv"]
+}
+
+### Prompt laden (ID aus der Antwort oben einsetzen)
+GET http://localhost:8080/api/v1/prompts/{{promptId}}
+
+### Prompt-Metadaten ändern
+PATCH http://localhost:8080/api/v1/prompts/{{promptId}}
+Content-Type: application/json
+
+{
+  "title": "Video Prompt (aktualisiert)"
+}
+
+### Validierungsfehler provozieren
+POST http://localhost:8080/api/v1/prompts
+Content-Type: application/json
+
+{
+  "title": "",
+  "content": ""
+}
+
+### Alle Tags mit Anzahl
+GET http://localhost:8080/api/v1/tags
+
+### Prompt löschen
+DELETE http://localhost:8080/api/v1/prompts/{{promptId}}
+
+### Health-Check
+GET http://localhost:8080/actuator/health
