@@ -8,7 +8,6 @@ import de.marinic.promptlib.prompt.dto.UpdatePromptRequest;
 import de.marinic.promptlib.tag.Tag;
 import de.marinic.promptlib.tag.TagRepository;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -57,15 +56,18 @@ public class PromptService {
     public PageResponse<PromptResponse> search(String query, Set<String> tags, Pageable pageable) {
         // Spring Data's Specification.where()/.and() throw on null arguments (no longer a
         // "no-op" like in older versions), so optional filters must be combined manually.
-        List<Specification<Prompt>> activeSpecs =
-                Stream.of(PromptSpecifications.titleOrDescriptionContains(query), PromptSpecifications.hasAnyTag(tags))
+        // fetchTags() always contributes (it has no "off" state), so the combined
+        // Specification is never empty here.
+        Specification<Prompt> spec =
+                Stream.of(
+                                PromptSpecifications.titleOrDescriptionContains(query),
+                                PromptSpecifications.hasAnyTag(tags),
+                                PromptSpecifications.fetchTags())
                         .filter(Objects::nonNull)
-                        .toList();
+                        .reduce(Specification::and)
+                        .orElseThrow();
 
-        Page<Prompt> page =
-                activeSpecs.isEmpty()
-                        ? promptRepository.findAll(pageable)
-                        : promptRepository.findAll(activeSpecs.stream().reduce(Specification::and).orElseThrow(), pageable);
+        Page<Prompt> page = promptRepository.findAll(spec, pageable);
 
         return PageResponse.from(page, PromptMapper::toResponse);
     }
