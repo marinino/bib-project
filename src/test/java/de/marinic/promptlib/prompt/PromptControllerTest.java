@@ -67,6 +67,16 @@ class PromptControllerTest {
     }
 
     @Test
+    void createWithMalformedJsonReturns400() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/prompts")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{not valid json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
     void getReturns200ForExistingPrompt() throws Exception {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();

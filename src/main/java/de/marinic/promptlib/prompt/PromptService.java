@@ -107,7 +107,11 @@ public class PromptService {
         Set<Tag> tags = new HashSet<>();
         for (String rawName : tagNames) {
             String normalized = rawName.trim().toLowerCase();
-            Tag tag = tagRepository.findByName(normalized).orElseGet(() -> tagRepository.save(new Tag(normalized)));
+            tagRepository.upsertByName(normalized);
+            Tag tag =
+                    tagRepository
+                            .findByName(normalized)
+                            .orElseThrow(() -> new IllegalStateException("Tag %s must exist after upsert".formatted(normalized)));
             tags.add(tag);
         }
         return tags;
