@@ -99,6 +99,57 @@ Content-Query greift (nicht bei der COUNT-Query, wo ein Fetch semantisch ungült
 **Ergebnis:** konstant **2 Statements**, unabhängig von der Anzahl der Prompts auf der Seite
 (bewiesen in `PromptSearchQueryCountTest`, Hibernate-Statistiken via `SessionFactory.getStatistics()`).
 
+### Race Condition beim Tag-Anlegen
+
+`resolveTags()` (Prompt anlegen/ändern) legt neue Tags per Find-or-Create an. Der ursprüngliche
+Ansatz (`findByName().orElseGet(() -> save(...))`) hatte dieselbe Art von Lücke wie oben: zwei
+parallele Requests, die dasselbe neue Tag zum ersten Mal anlegen, konnten beide `save()` versuchen —
+einer scheiterte mit `DataIntegrityViolationException` auf dem `UNIQUE`-Constraint.
+
+Ein einfaches `try/catch` um den `save()` reicht hier nicht zuverlässig: schlägt ein `flush()` mit
+einer Constraint-Verletzung fehl, markiert Hibernate die aktuelle Transaktion oft als beschädigt —
+weitere Arbeit in *derselben* Transaktion kann danach unvorhersehbar scheitern, selbst wenn die
+Exception im Code gefangen wird. Der "sichere" Weg wäre eine separate Transaktion
+(`@Transactional(REQUIRES_NEW)`) nur fürs Tag-Anlegen gewesen — deutlich mehr Komplexität.
+
+**Lösung:** `TagRepository.upsertByName()` — `INSERT ... ON CONFLICT (name) DO NOTHING` (natives SQL).
+Wirft nie, egal wie viele Requests gleichzeitig dasselbe neue Tag anlegen wollen; Postgres serialisiert
+das intern über eine Sperre auf dem Unique-Index. Danach garantiert ein `findByName()`, dass die Zeile
+existiert — unabhängig davon, wer sie tatsächlich eingefügt hat.
+
+Verifiziert in beide Richtungen in `PromptTagConcurrencyTest`: 10 parallele Prompt-Erstellungen mit
+demselben neuen Tag laufen mit dem Fix durch; gegen den alten Code (kurz zurückgeschaltet, um zu
+prüfen, dass der Test wirklich etwas beweist) schlägt derselbe Test zuverlässig fehl.
+
+### Stufe 3: Async-Ausführung ohne offene Transaktion während des LLM-Calls
+
+`POST /api/v1/executions` legt eine `Execution`-Zeile mit Status `PENDING` an und gibt sofort `202
+Accepted` zurück; der eigentliche LLM-Call läuft danach asynchron. Zwei Fallstricke dabei, die der
+naive Ansatz ("Async-Methode direkt aus der Transaktion heraus aufrufen") beide hätte:
+
+1. **Die Transaktion darf nicht offen bleiben, während der LLM-Call läuft** — ein Request an eine
+   externe API kann Sekunden dauern; eine offene DB-Transaktion so lange zu halten, blockiert
+   Connections aus dem Pool unnötig lange.
+2. **Der Async-Thread darf nicht starten, bevor die erzeugende Transaktion committed hat** — würde
+   `ExecutionService.create()` den Async-Aufruf direkt (noch innerhalb der eigenen `@Transactional`-
+   Methode) auslösen, könnte der neue Thread versuchen, die gerade erst eingefügte `Execution`-Zeile
+   zu lesen, *bevor* sie überhaupt committed und damit für andere Transaktionen sichtbar ist.
+
+**Lösung:**
+- `ExecutionService.create()` speichert die `Execution`-Zeile in einer kurzen Transaktion und
+  publiziert ein `ExecutionCreatedEvent` — Events werden aber erst zugestellt, wenn `create()`
+  zurückkehrt.
+- `ExecutionCreatedListener` reagiert per `@TransactionalEventListener(phase = AFTER_COMMIT)` — feuert
+  garantiert erst, *nachdem* die erzeugende Transaktion erfolgreich committed hat.
+- Erst dann startet `ExecutionRunner.run()` (eigene Bean, wegen `@Async`-Selbstaufruf-Falle — siehe
+  `PromptVersionService`-Begründung weiter oben) auf einem eigenen `TaskExecutor`. Jeder
+  Repository-Aufruf darin (`findById`/`save`) ist seine eigene kurze Transaktion; der LLM-Call selbst
+  läuft dazwischen komplett ohne offene Transaktion.
+
+Bewiesen in `ExecutionIntegrationTest`: Erfolgs- und Fehlerfall laufen gegen die echte (Mock-)LLM-
+Anbindung durch, mit `Awaitility` auf den finalen Status gepollt — kein Mocking der eigenen Klassen,
+weil genau das Zusammenspiel zwischen ihnen geprüft werden soll.
+
 ## Tests
 
 ```bash
