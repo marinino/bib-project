@@ -1,14 +1,21 @@
 package de.marinic.promptlib.prompt;
 
 import de.marinic.promptlib.common.error.NotFoundException;
+import de.marinic.promptlib.common.page.PageResponse;
 import de.marinic.promptlib.prompt.dto.CreatePromptRequest;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
 import de.marinic.promptlib.prompt.dto.UpdatePromptRequest;
 import de.marinic.promptlib.tag.Tag;
 import de.marinic.promptlib.tag.TagRepository;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +51,23 @@ public class PromptService {
     @Transactional(readOnly = true)
     public PromptResponse get(UUID id) {
         return PromptMapper.toResponse(findOrThrow(id));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PromptResponse> search(String query, Set<String> tags, Pageable pageable) {
+        // Spring Data's Specification.where()/.and() throw on null arguments (no longer a
+        // "no-op" like in older versions), so optional filters must be combined manually.
+        List<Specification<Prompt>> activeSpecs =
+                Stream.of(PromptSpecifications.titleOrDescriptionContains(query), PromptSpecifications.hasAnyTag(tags))
+                        .filter(Objects::nonNull)
+                        .toList();
+
+        Page<Prompt> page =
+                activeSpecs.isEmpty()
+                        ? promptRepository.findAll(pageable)
+                        : promptRepository.findAll(activeSpecs.stream().reduce(Specification::and).orElseThrow(), pageable);
+
+        return PageResponse.from(page, PromptMapper::toResponse);
     }
 
     public PromptResponse update(UUID id, UpdatePromptRequest request) {

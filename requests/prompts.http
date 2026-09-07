@@ -32,6 +32,15 @@ Content-Type: application/json
 ### Alle Tags mit Anzahl
 GET http://localhost:8080/api/v1/tags
 
+### Suche: Volltext über Titel/Beschreibung
+GET http://localhost:8080/api/v1/prompts?query=video
+
+### Suche: nach Tags filtern (Treffer = mind. eines der Tags)
+GET http://localhost:8080/api/v1/prompts?tags=comfyui,cv
+
+### Suche: Query + Tags kombiniert, mit Pagination und Sortierung
+GET http://localhost:8080/api/v1/prompts?query=video&tags=comfyui&page=0&size=10&sort=updatedAt,desc
+
 ### Neue Version anlegen
 POST http://localhost:8080/api/v1/prompts/{{promptId}}/versions
 Content-Type: application/json

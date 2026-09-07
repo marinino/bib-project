@@ -1,8 +1,10 @@
 package de.marinic.promptlib.prompt;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -11,11 +13,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import de.marinic.promptlib.common.error.NotFoundException;
+import de.marinic.promptlib.common.page.PageResponse;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -88,5 +93,29 @@ class PromptControllerTest {
         UUID id = UUID.randomUUID();
 
         mockMvc.perform(delete("/api/v1/prompts/{id}", id)).andExpect(status().isNoContent());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchBindsQueryParamsAndReturnsPageResponse() throws Exception {
+        Instant now = Instant.now();
+        PromptResponse prompt = new PromptResponse(UUID.randomUUID(), "Video", null, 1, Set.of("cv"), now, now);
+        PageResponse<PromptResponse> page = new PageResponse<>(List.of(prompt), 0, 10, 1, 1);
+        given(promptService.search(any(), any(), any())).willReturn(page);
+
+        mockMvc.perform(
+                        get("/api/v1/prompts")
+                                .param("query", "video")
+                                .param("tags", "cv,comfyui")
+                                .param("page", "0")
+                                .param("size", "10")
+                                .param("sort", "title,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].title").value("Video"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+
+        ArgumentCaptor<Set<String>> tagsCaptor = ArgumentCaptor.forClass(Set.class);
+        verify(promptService).search(eq("video"), tagsCaptor.capture(), any());
+        assertThat(tagsCaptor.getValue()).containsExactlyInAnyOrder("cv", "comfyui");
     }
 }
