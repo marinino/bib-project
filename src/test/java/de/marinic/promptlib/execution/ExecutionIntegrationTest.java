@@ -93,4 +93,30 @@ class ExecutionIntegrationTest {
         assertThat(finished.errorMessage()).contains("simulated a failure");
         assertThat(finished.finishedAt()).isNotNull();
     }
+
+    // Regression test: an exception that is NOT LlmException (a genuine bug, not an expected
+    // LLM failure) must still be caught by ExecutionRunner's outer try/catch and recorded as
+    // FAILED - otherwise Spring's default AsyncUncaughtExceptionHandler would only log it and
+    // silently drop it, leaving the execution stuck at RUNNING forever with no way for any
+    // API consumer to ever find out (confirmed by temporarily narrowing the catch back to
+    // LlmException only and re-running this test: it stayed RUNNING with finishedAt == null).
+    @Test
+    void unexpectedBugIsStillRecordedAsFailed() {
+        PromptResponse prompt = promptService.create(new CreatePromptRequest("Bug Test", null, "__BUG__", Set.of()));
+        createdPromptIds.add(prompt.id());
+
+        ExecutionResponse created = executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null));
+
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(
+                        () -> {
+                            ExecutionResponse current = executionService.get(created.id());
+                            assertThat(current.status()).isEqualTo("FAILED");
+                        });
+
+        ExecutionResponse finished = executionService.get(created.id());
+        assertThat(finished.errorMessage()).contains("Simulated unexpected bug");
+        assertThat(finished.finishedAt()).isNotNull();
+    }
 }

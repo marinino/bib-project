@@ -7,11 +7,14 @@ import org.springframework.stereotype.Component;
  * Default LlmClient: no network, no cost, deterministic - so the rest of the app (and its
  * tests) can run without a real API key. Active unless the "real" profile is set.
  *
- * <p>Recognizes two magic markers in the prompt text so tests can deterministically
- * exercise failure/latency handling without relying on a flaky real API:
+ * <p>Recognizes magic markers in the prompt text so tests can deterministically exercise
+ * failure/latency handling without relying on a flaky real API:
  *
  * <ul>
  *   <li>{@code __FAIL__} - throws {@link LlmException}
+ *   <li>{@code __BUG__} - throws a plain {@link IllegalStateException}, i.e. NOT an
+ *       LlmException - simulates a genuine bug rather than an expected LLM failure, to
+ *       exercise ExecutionRunner's catch-all safety net
  *   <li>{@code __SLOW__} - sleeps briefly before responding
  * </ul>
  */
@@ -25,6 +28,10 @@ public class MockLlmClient implements LlmClient {
 
         if (prompt != null && prompt.contains("__FAIL__")) {
             throw new LlmException("Mock LLM client simulated a failure");
+        }
+
+        if (prompt != null && prompt.contains("__BUG__")) {
+            throw new IllegalStateException("Simulated unexpected bug, not an LlmException");
         }
 
         if (prompt != null && prompt.contains("__SLOW__")) {

@@ -43,6 +43,25 @@ public class ExecutionRunner {
 
     @Async("executionTaskExecutor")
     public void run(UUID executionId) {
+        // Catches everything, not just LlmException: an @Async void method's exceptions
+        // are otherwise only logged by Spring's default AsyncUncaughtExceptionHandler and
+        // then silently dropped - the caller has already returned, there's no one left to
+        // propagate to. Without this, any unexpected bug here (not just an LLM failure)
+        // would leave the execution stuck at RUNNING forever, invisible to API consumers.
+        try {
+            runUnsafe(executionId);
+        } catch (LlmException e) {
+            // Expected failure mode (bad input, rate limit, ...) - not a bug, no stack trace.
+            log.warn("Execution {} failed: {}", executionId, e.getMessage());
+            recordFailure(executionId, e.getMessage());
+        } catch (Exception e) {
+            // Anything else is a genuine, unanticipated bug - worth a full stack trace.
+            log.error("Execution {} failed unexpectedly", executionId, e);
+            recordFailure(executionId, "Unexpected error: " + e.getMessage());
+        }
+    }
+
+    private void runUnsafe(UUID executionId) {
         Execution execution = executionRepository.findById(executionId).orElse(null);
         if (execution == null) {
             log.warn("Execution {} vanished before it could run", executionId);
@@ -62,13 +81,8 @@ public class ExecutionRunner {
             return;
         }
 
-        LlmResult result;
-        try {
-            result = llmClient.complete(new LlmRequest(execution.getModel(), version.getContent(), execution.getInputParams()));
-        } catch (LlmException e) {
-            recordFailure(executionId, e.getMessage());
-            return;
-        }
+        LlmResult result =
+                llmClient.complete(new LlmRequest(execution.getModel(), version.getContent(), execution.getInputParams()));
 
         recordSuccess(executionId, result);
     }

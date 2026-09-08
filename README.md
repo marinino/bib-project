@@ -141,14 +141,41 @@ naive Ansatz ("Async-Methode direkt aus der Transaktion heraus aufrufen") beide 
   zurückkehrt.
 - `ExecutionCreatedListener` reagiert per `@TransactionalEventListener(phase = AFTER_COMMIT)` — feuert
   garantiert erst, *nachdem* die erzeugende Transaktion erfolgreich committed hat.
-- Erst dann startet `ExecutionRunner.run()` (eigene Bean, wegen `@Async`-Selbstaufruf-Falle — siehe
-  `PromptVersionService`-Begründung weiter oben) auf einem eigenen `TaskExecutor`. Jeder
-  Repository-Aufruf darin (`findById`/`save`) ist seine eigene kurze Transaktion; der LLM-Call selbst
-  läuft dazwischen komplett ohne offene Transaktion.
+- Erst dann startet `ExecutionRunner.run()` auf einem eigenen `TaskExecutor`. Jeder Repository-Aufruf
+  darin (`findById`/`save`) ist seine eigene kurze Transaktion; der LLM-Call selbst läuft dazwischen
+  komplett ohne offene Transaktion.
+
+`ExecutionRunner` ist eine eigene Klasse (statt einer Methode auf `ExecutionService`) — aber *nicht*
+wegen der `@Async`-Selbstaufruf-Falle: `ExecutionCreatedListener` ruft `run()` ohnehin über eine
+injizierte Fremd-Bean-Referenz auf, kein `this.`-Aufruf, also hätte `@Async` so oder so funktioniert
+(live mit Thread-Namen-Logging nachgewiesen: `create()`/`onExecutionCreated()` laufen synchron auf
+`main`, erst `run()` wechselt auf `execution-N` — einzig wegen `@Async` auf dieser Methode, unabhängig
+von der Klassenzugehörigkeit). Der eigentliche Grund für die Trennung ist reine
+Verantwortungstrennung: `ExecutionService` verwaltet Transaktionsgrenzen, `ExecutionRunner` die
+Async-Arbeit ohne Transaktionsgrenze.
 
 Bewiesen in `ExecutionIntegrationTest`: Erfolgs- und Fehlerfall laufen gegen die echte (Mock-)LLM-
 Anbindung durch, mit `Awaitility` auf den finalen Status gepollt — kein Mocking der eigenen Klassen,
 weil genau das Zusammenspiel zwischen ihnen geprüft werden soll.
+
+### Verschluckte Exceptions bei `@Async void`-Methoden
+
+`ExecutionRunner.run()` fing ursprünglich nur `LlmException` ab (den kontrollierten Fehlerfall). Ein
+echter, unerwarteter Bug im Code (nicht die LLM-API selbst) hätte diesen `catch`-Block übersprungen —
+mit einem gravierenden Effekt: Bei einer `@Async void`-Methode gibt es **keinen Aufrufer, der noch auf
+das Ergebnis wartet** (der Request ist ja längst mit `202 Accepted` beantwortet). Eine Exception, die
+aus so einer Methode entkommt, landet nur bei Spring's `SimpleAsyncUncaughtExceptionHandler`, der sie
+loggt und dann verwirft — die `Execution`-Zeile bleibt für immer bei `RUNNING` stehen, ohne
+`finishedAt`, ohne `errorMessage`, unsichtbar für jeden API-Konsumenten.
+
+Live nachgestellt: ein `IllegalStateException` (bewusst *keine* `LlmException`) im Mock-Client
+provoziert, Status blieb nach mehreren Sekunden bei `RUNNING`, `finishedAt: null`, einzige Spur ein
+Log-Eintrag von Springs generischem Handler.
+
+**Fix:** `run()` fängt jetzt jede `Exception` (nicht nur `LlmException`) und ruft in jedem Fall
+`recordFailure(...)` auf — mit unterschiedlichem Log-Level: `WARN` ohne Stacktrace für erwartete
+`LlmException`, `ERROR` mit vollem Stacktrace für alles andere (ein echter Bug verdient Aufmerksamkeit,
+eine erwartete LLM-Fehlermeldung nicht). Regressionstest: `unexpectedBugIsStillRecordedAsFailed`.
 
 ## Tests
 
