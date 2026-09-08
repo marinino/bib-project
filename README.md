@@ -210,6 +210,16 @@ diesmal im Speicher statt in Postgres. Ohne expliziten Reset ließ ein zuerst la
 nicht garantiert) den Breaker für alle danach `OPEN` zurück. Fix: `CircuitBreakerRegistry.circuitBreaker(
 "llm").reset()` in `@BeforeEach` von `ResilienceTest` und `ExecutionIntegrationTest`.
 
+**Echter Bug, gefunden durch tatsächliches Warten (nicht nur Doku gelesen):** `OPEN → HALF_OPEN` passiert
+**nicht** automatisch, nur weil `wait-duration-in-open-state` verstrichen ist — `resilience4j`'s eigener
+Default für `automatic-transition-from-open-to-half-open-enabled` ist `false`. Ohne diese Property
+explizit auf `true` zu setzen, wäre unser Breaker nach dem ersten Auslösen für immer `OPEN` geblieben
+(bis zum App-Neustart) — hätte jede weitere Execution permanent abgelehnt, selbst Stunden nachdem sich
+die LLM-API längst wieder erholt hätte. Mit Zeitstempel-Logging live nachgestellt: nach 3s Warten bei
+`false` immer noch `OPEN`; mit `automatic-transition-from-open-to-half-open-enabled=true` schaltet ein
+Hintergrund-Task von sich aus auf `HALF_OPEN` um — sogar **während** man wartet, nicht erst beim
+nächsten Aufruf. Regressionstest: `ResilienceTest.circuitBreakerSelfHealsAfterWaitDuration`.
+
 **Timeouts:** `RealLlmClient` bekommt Connect-/Read-Timeout aus `LlmProperties` über einen
 `SimpleClientHttpRequestFactory` auf dem `RestClient.Builder` — ohne das würde ein hängender Request
 nie enden.

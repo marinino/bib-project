@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import de.marinic.promptlib.TestcontainersConfiguration;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,5 +58,33 @@ class ResilienceTest {
         assertThatThrownBy(() -> mockLlmClient.complete(failingRequest))
                 .isInstanceOf(CallNotPermittedException.class);
         assertThat(mockLlmClient.callCount()).isEqualTo(4);
+    }
+
+    // Regression test for a real bug found by actually waiting past wait-duration-in-open-
+    // state and observing the breaker stay OPEN forever: automaticTransitionFromOpenTo-
+    // HalfOpenEnabled defaults to false, meaning the breaker never re-checks on its own once
+    // OPEN - it would reject every execution permanently, even long after the LLM recovers,
+    // unless this is explicitly enabled (see application.properties).
+    @Test
+    void circuitBreakerSelfHealsAfterWaitDuration() throws InterruptedException {
+        CircuitBreaker breaker = circuitBreakerRegistry.circuitBreaker("llm");
+        LlmRequest failingRequest = new LlmRequest(null, "__FAIL__", null);
+
+        // Trip the breaker.
+        assertThatThrownBy(() -> mockLlmClient.complete(failingRequest)).isInstanceOf(LlmException.class);
+        assertThatThrownBy(() -> mockLlmClient.complete(failingRequest))
+                .isInstanceOf(CallNotPermittedException.class);
+        assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        // Past wait-duration-in-open-state (2s): with automatic-transition enabled, a
+        // background task flips it to HALF_OPEN on its own, without needing a call.
+        Thread.sleep(3000);
+        assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        // The mock is still failing (still __FAIL__), so the permitted trial calls in
+        // HALF_OPEN also fail, and the breaker correctly snaps back to OPEN.
+        assertThatThrownBy(() -> mockLlmClient.complete(failingRequest))
+                .isInstanceOfAny(LlmException.class, CallNotPermittedException.class);
+        assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
     }
 }
