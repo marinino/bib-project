@@ -32,15 +32,25 @@ class AuthFlowIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
 
+    // Regression test: a rejection from the security filter chain (no controller ever
+    // reached) used to come back as a bare 401 with Content-Length: 0 - none of the
+    // ProblemDetail JSON the rest of the API returns for every other error. Confirmed live
+    // against a real Tomcat (curl), not just MockMvc, before fixing it via
+    // ProblemDetailSecurityHandlers.
     @Test
-    void protectedEndpointWithoutTokenReturns401() throws Exception {
-        mockMvc.perform(get("/api/v1/prompts")).andExpect(status().isUnauthorized());
+    void protectedEndpointWithoutTokenReturns401AsProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/prompts"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.detail").value("Full authentication is required"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/prompts"));
     }
 
     @Test
-    void protectedEndpointWithGarbageTokenReturns401() throws Exception {
+    void protectedEndpointWithGarbageTokenReturns401AsProblemDetail() throws Exception {
         mockMvc.perform(get("/api/v1/prompts").header("Authorization", "Bearer not-a-real-token"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Full authentication is required"));
     }
 
     @Test

@@ -2,7 +2,6 @@ package de.marinic.promptlib.common.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -38,7 +37,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter)
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http, JwtAuthenticationFilter jwtFilter, ProblemDetailSecurityHandlers problemDetailHandlers)
             throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -53,12 +53,8 @@ public class SecurityConfig {
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(
                         eh ->
-                                eh.authenticationEntryPoint(
-                                                (request, response, ex) ->
-                                                        response.sendError(HttpStatus.UNAUTHORIZED.value()))
-                                        .accessDeniedHandler(
-                                                (request, response, ex) ->
-                                                        response.sendError(HttpStatus.FORBIDDEN.value())));
+                                eh.authenticationEntryPoint(problemDetailHandlers)
+                                        .accessDeniedHandler(problemDetailHandlers));
         return http.build();
     }
 }

@@ -85,7 +85,11 @@ class PromptOwnershipIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
 
-        // Someone else can never modify or delete it, private or not.
+        // Someone else can never modify or delete it, private or not. This 403 comes from
+        // PromptAccess.requireOwner -> ForbiddenException -> GlobalExceptionHandler (a real
+        // controller ran), NOT from ProblemDetailSecurityHandlers.handle() - we have no
+        // role-based authorizeHttpRequests rule that would ever make Spring Security itself
+        // deny access, so that AccessDeniedHandler path currently has no test exercising it.
         mockMvc.perform(
                         patch("/api/v1/prompts/{id}", promptId)
                                 .header("Authorization", "Bearer " + otherToken)
@@ -93,7 +97,8 @@ class PromptOwnershipIntegrationTest {
                                 .content("""
                                         {"title":"Hijacked"}
                                         """))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
         mockMvc.perform(delete("/api/v1/prompts/{id}", promptId).header("Authorization", "Bearer " + otherToken))
                 .andExpect(status().isForbidden());
 

@@ -268,6 +268,20 @@ Principal direkt dereferenziert oder nur weiterreicht). Fix: `@Import(SecurityCo
 echte Filterkette (kein `addFilters = false` mehr), mit `JwtService`/`UserRepository`/
 `UserDetailsServiceImpl` als `@MockitoBean`, da nie ein echtes Token durch die Tests geschickt wird.
 
+**Bug gefunden und live verifiziert (nicht nur im Test):** Eine Ablehnung durch die
+Security-Filterkette (fehlendes/ungültiges Token) erreicht nie einen Controller, also auch nie den
+`@RestControllerAdvice` (`GlobalExceptionHandler`) — Spring Securitys Default dafür war ein
+nacktes `response.sendError(401)`. Per `curl` gegen die echte, laufende App (nicht nur MockMvc,
+das das Problem in einem ersten Testlauf sogar noch verschleiert hätte) bestätigt: `Content-Length:
+0`, gar kein Body, während derselbe Statuscode aus einem Controller heraus (z. B. falsches
+Passwort beim Login) sauberes `ProblemDetail`-JSON liefert — zwei Formate für denselben
+Fehlerfall. Fix: `ProblemDetailSecurityHandlers` (`AuthenticationEntryPoint` +
+`AccessDeniedHandler` in einer Klasse) schreibt jetzt manuell dasselbe `ProblemDetail`-JSON.
+Nebenbei aufgefallen und mitgefixt: ohne explizites `response.setCharacterEncoding("UTF-8")`
+vor dem Schreiben landet der Servlet-Container-Default (`ISO-8859-1`) im `Content-Type`-Header —
+ebenfalls per `curl` verglichen mit dem Controller-Pfad, der implizit UTF-8 nutzt.
+Regressionstest: `AuthFlowIntegrationTest.protectedEndpointWithoutTokenReturns401AsProblemDetail`.
+
 **Nicht umgesetzt:** Owner-/Sichtbarkeitsprüfung für `GET /executions` und `GET
 /executions/{id}` (nur `POST /executions` prüft, dass der Prompt für den Aufrufer lesbar ist,
 über `PromptAccess.requireReadable` auf `version.getPrompt()`) — bewusst kleiner Schnitt für

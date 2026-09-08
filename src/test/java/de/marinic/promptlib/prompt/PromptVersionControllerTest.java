@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import de.marinic.promptlib.common.error.NotFoundException;
 import de.marinic.promptlib.common.security.JwtService;
+import de.marinic.promptlib.common.security.ProblemDetailSecurityHandlers;
 import de.marinic.promptlib.common.security.SecurityConfig;
 import de.marinic.promptlib.common.security.TestPrincipals;
 import de.marinic.promptlib.common.security.UserDetailsServiceImpl;
@@ -31,7 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
 // See PromptControllerTest for why SecurityConfig must be imported and the real filter chain
 // left enabled here.
 @WebMvcTest(PromptVersionController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ProblemDetailSecurityHandlers.class})
 class PromptVersionControllerTest {
 
     @Autowired private MockMvc mockMvc;

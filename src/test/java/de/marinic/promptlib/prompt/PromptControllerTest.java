@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import de.marinic.promptlib.common.error.NotFoundException;
 import de.marinic.promptlib.common.page.PageResponse;
 import de.marinic.promptlib.common.security.JwtService;
+import de.marinic.promptlib.common.security.ProblemDetailSecurityHandlers;
 import de.marinic.promptlib.common.security.SecurityConfig;
 import de.marinic.promptlib.common.security.TestPrincipals;
 import de.marinic.promptlib.common.security.UserDetailsServiceImpl;
@@ -40,7 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
 // TestPrincipals.user(...) principal only reaches SecurityContextHolder via
 // SecurityContextHolderFilter, which is part of that chain.
 @WebMvcTest(PromptController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ProblemDetailSecurityHandlers.class})
 class PromptControllerTest {
 
     @Autowired private MockMvc mockMvc;
