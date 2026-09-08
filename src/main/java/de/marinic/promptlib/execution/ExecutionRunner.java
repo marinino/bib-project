@@ -6,6 +6,7 @@ import de.marinic.promptlib.llm.LlmRequest;
 import de.marinic.promptlib.llm.LlmResult;
 import de.marinic.promptlib.prompt.PromptVersion;
 import de.marinic.promptlib.prompt.PromptVersionRepository;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -54,6 +55,12 @@ public class ExecutionRunner {
             // Expected failure mode (bad input, rate limit, ...) - not a bug, no stack trace.
             log.warn("Execution {} failed: {}", executionId, e.getMessage());
             recordFailure(executionId, e.getMessage());
+        } catch (CallNotPermittedException e) {
+            // Circuit breaker is OPEN - also an expected, designed-for resilience outcome,
+            // not a bug: the LLM has been failing enough that we're deliberately not even
+            // trying right now, to give it room to recover instead of piling on more load.
+            log.warn("Execution {} failed: circuit breaker open for LLM calls", executionId);
+            recordFailure(executionId, "LLM temporarily unavailable (circuit breaker open)");
         } catch (Exception e) {
             // Anything else is a genuine, unanticipated bug - worth a full stack trace.
             log.error("Execution {} failed unexpectedly", executionId, e);

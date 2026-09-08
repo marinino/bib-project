@@ -8,6 +8,7 @@ import de.marinic.promptlib.execution.dto.ExecutionResponse;
 import de.marinic.promptlib.prompt.PromptService;
 import de.marinic.promptlib.prompt.dto.CreatePromptRequest;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,8 +42,17 @@ class ExecutionIntegrationTest {
 
     @Autowired private PromptService promptService;
     @Autowired private ExecutionService executionService;
+    @Autowired private CircuitBreakerRegistry circuitBreakerRegistry;
 
     private final List<UUID> createdPromptIds = new ArrayList<>();
+
+    @BeforeEach
+    void resetCircuitBreaker() {
+        // Shared singleton state (see ResilienceTest) - a previous test's failures could
+        // otherwise leave the breaker OPEN and turn every failure here into
+        // CallNotPermittedException instead of the LlmException these tests expect.
+        circuitBreakerRegistry.circuitBreaker("llm").reset();
+    }
 
     @AfterEach
     void cleanUp() {

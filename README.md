@@ -177,6 +177,47 @@ Log-Eintrag von Springs generischem Handler.
 `LlmException`, `ERROR` mit vollem Stacktrace für alles andere (ein echter Bug verdient Aufmerksamkeit,
 eine erwartete LLM-Fehlermeldung nicht). Regressionstest: `unexpectedBugIsStillRecordedAsFailed`.
 
+### Stufe 3.5: Retry, Circuit Breaker, Timeouts (Resilience4j)
+
+`LlmClient.complete()` (beide Implementierungen) trägt `@Retry(name = "llm")` +
+`@CircuitBreaker(name = "llm")`. Für den "Fallback auf FAILED-Status" aus dem Plan brauchte es
+keinen extra Resilience4j-`fallbackMethod` — der `ExecutionRunner`-Catch-all von oben übernimmt das
+bereits automatisch, egal welche Exception am Ende durchkommt (`LlmException`,
+`CallNotPermittedException` vom offenen Breaker, oder ein echter Bug).
+
+**`spring-boot-starter-aop` heißt in Boot 4 `spring-boot-starter-aspectj`** — ohne dieses Umbenennen
+zu kennen, schlägt die Dependency-Auflösung fehl (`resilience4j-spring-boot3` selbst ist offiziell
+für Boot 3 gebaut, funktioniert aber unverändert auf Boot 4.1.1 — Kontext lädt sauber).
+
+**Zusammenspiel Retry + Circuit Breaker live gemessen** (nicht angenommen), über einen Aufrufzähler
+in `MockLlmClient` (`resilience4j.retry.instances.llm.max-attempts=3`,
+`sliding-window-size=4`, `minimum-number-of-calls=4`, `failure-rate-threshold=50%`):
+
+| Aufruf | Ergebnis | Tatsächliche `complete()`-Aufrufe |
+|---|---|---|
+| 1 | `LlmException` (Retry erschöpft) | 3 |
+| 2 | `CallNotPermittedException` (Breaker klappt mitten im 1. Retry-Versuch auf) | 1 |
+| 3+ | `CallNotPermittedException`, sofort | 0 |
+
+Spring Boot's Default-Reihenfolge legt `@Retry` **außen**, `@CircuitBreaker` **innen** — jeder
+Retry-Versuch ist selbst ein Circuit-Breaker-Aufruf. `CallNotPermittedException` steht nicht in
+`retry-exceptions`, wird also nicht selbst nochmal retried, sondern fliegt direkt durch. Regressionstest:
+`ResilienceTest.repeatedFailuresRetryThenTripTheCircuitBreaker`.
+
+**Falle dabei:** Der Circuit Breaker ist Singleton-Zustand (`CLOSED`/`OPEN`/...), geteilt über den
+kompletten Testlauf — genau wie die Datenbank bei den `@SpringBootTest`-Klassen weiter oben, nur
+diesmal im Speicher statt in Postgres. Ohne expliziten Reset ließ ein zuerst laufender Test (Reihenfolge
+nicht garantiert) den Breaker für alle danach `OPEN` zurück. Fix: `CircuitBreakerRegistry.circuitBreaker(
+"llm").reset()` in `@BeforeEach` von `ResilienceTest` und `ExecutionIntegrationTest`.
+
+**Timeouts:** `RealLlmClient` bekommt Connect-/Read-Timeout aus `LlmProperties` über einen
+`SimpleClientHttpRequestFactory` auf dem `RestClient.Builder` — ohne das würde ein hängender Request
+nie enden.
+
+**Nicht umgesetzt:** Rate Limiting "pro Nutzer" braucht einen Nutzer-Begriff, den es erst mit Auth in
+Stufe 4 gibt. Ein globaler Rate Limiter hätte die eigentliche Anforderung nicht erfüllt, deshalb bewusst
+verschoben statt vorgetäuscht.
+
 ## Tests
 
 ```bash

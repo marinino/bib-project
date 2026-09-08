@@ -1,5 +1,8 @@
 package de.marinic.promptlib.llm;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -8,7 +11,7 @@ import org.springframework.stereotype.Component;
  * tests) can run without a real API key. Active unless the "real" profile is set.
  *
  * <p>Recognizes magic markers in the prompt text so tests can deterministically exercise
- * failure/latency handling without relying on a flaky real API:
+ * failure/latency/resilience handling without relying on a flaky real API:
  *
  * <ul>
  *   <li>{@code __FAIL__} - throws {@link LlmException}
@@ -17,13 +20,29 @@ import org.springframework.stereotype.Component;
  *       exercise ExecutionRunner's catch-all safety net
  *   <li>{@code __SLOW__} - sleeps briefly before responding
  * </ul>
+ *
+ * <p>{@link #callCount} lets tests observe how many times the (retried/circuit-breaker-
+ * wrapped) method actually ran underneath, not just how many times the caller called it.
  */
 @Component
 @Profile("!real")
 public class MockLlmClient implements LlmClient {
 
+    private final AtomicInteger callCount = new AtomicInteger();
+
+    public int callCount() {
+        return callCount.get();
+    }
+
+    public void resetCallCount() {
+        callCount.set(0);
+    }
+
     @Override
+    @Retry(name = "llm")
+    @CircuitBreaker(name = "llm")
     public LlmResult complete(LlmRequest request) {
+        callCount.incrementAndGet();
         String prompt = request.prompt();
 
         if (prompt != null && prompt.contains("__FAIL__")) {

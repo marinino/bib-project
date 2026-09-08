@@ -1,9 +1,13 @@
 package de.marinic.promptlib.llm;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import java.time.Duration;
 import java.util.List;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -22,14 +26,22 @@ public class RealLlmClient implements LlmClient {
 
     public RealLlmClient(RestClient.Builder restClientBuilder, LlmProperties properties) {
         this.properties = properties;
+
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofMillis(properties.connectTimeoutMs()));
+        requestFactory.setReadTimeout(Duration.ofMillis(properties.readTimeoutMs()));
+
         this.restClient =
                 restClientBuilder
                         .baseUrl(properties.baseUrl())
                         .defaultHeader("Authorization", "Bearer " + properties.apiKey())
+                        .requestFactory(requestFactory)
                         .build();
     }
 
     @Override
+    @Retry(name = "llm")
+    @CircuitBreaker(name = "llm")
     public LlmResult complete(LlmRequest request) {
         long start = System.currentTimeMillis();
         try {

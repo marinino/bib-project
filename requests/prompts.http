@@ -86,5 +86,17 @@ Content-Type: application/json
   "content": "__FAIL__"
 }
 
+### Circuit Breaker provozieren: denselben Fail-Prompt mehrfach ausfuehren.
+### 1. Execution: Retry laeuft 3x, dann "simulated a failure"
+### 2. Execution: Breaker klappt mitten im ersten Retry-Versuch auf -> "circuit breaker open"
+### 3.+: sofortiger Fail, kein einziger Aufruf mehr bei MockLlmClient (Latenz ~20ms statt ~200ms)
+POST http://localhost:8080/api/v1/executions
+Content-Type: application/json
+
+{
+  "promptId": "{{promptId}}",
+  "versionNo": 1
+}
+
 ### Health-Check
 GET http://localhost:8080/actuator/health
