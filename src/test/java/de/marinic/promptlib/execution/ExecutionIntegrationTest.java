@@ -8,6 +8,8 @@ import de.marinic.promptlib.execution.dto.ExecutionResponse;
 import de.marinic.promptlib.prompt.PromptService;
 import de.marinic.promptlib.prompt.dto.CreatePromptRequest;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
+import de.marinic.promptlib.user.TestUsers;
+import de.marinic.promptlib.user.UserRepository;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * End-to-end proof that create() -> AFTER_COMMIT event -> @Async run() -> status update
@@ -43,8 +46,11 @@ class ExecutionIntegrationTest {
     @Autowired private PromptService promptService;
     @Autowired private ExecutionService executionService;
     @Autowired private CircuitBreakerRegistry circuitBreakerRegistry;
+    @Autowired private UserRepository userRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
 
     private final List<UUID> createdPromptIds = new ArrayList<>();
+    private UUID userId;
 
     @BeforeEach
     void resetCircuitBreaker() {
@@ -52,21 +58,24 @@ class ExecutionIntegrationTest {
         // otherwise leave the breaker OPEN and turn every failure here into
         // CallNotPermittedException instead of the LlmException these tests expect.
         circuitBreakerRegistry.circuitBreaker("llm").reset();
+        userId = TestUsers.create(userRepository, passwordEncoder).getId();
     }
 
     @AfterEach
     void cleanUp() {
-        createdPromptIds.forEach(promptService::delete);
+        createdPromptIds.forEach(id -> promptService.delete(id, userId));
         createdPromptIds.clear();
     }
 
     @Test
     void executionEventuallySucceedsAndCarriesTheMockLlmOutput() {
         PromptResponse prompt =
-                promptService.create(new CreatePromptRequest("Execution Test", null, "Sag hallo zu {{name}}", Set.of()));
+                promptService.create(
+                        new CreatePromptRequest("Execution Test", null, "Sag hallo zu {{name}}", Set.of(), null), userId);
         createdPromptIds.add(prompt.id());
 
-        ExecutionResponse created = executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null));
+        ExecutionResponse created =
+                executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null), userId);
         assertThat(created.status()).isEqualTo("PENDING");
 
         Awaitility.await()
@@ -87,10 +96,12 @@ class ExecutionIntegrationTest {
     @Test
     void executionEventuallyFailsAndCarriesTheErrorMessage() {
         PromptResponse prompt =
-                promptService.create(new CreatePromptRequest("Execution Failure Test", null, "__FAIL__", Set.of()));
+                promptService.create(
+                        new CreatePromptRequest("Execution Failure Test", null, "__FAIL__", Set.of(), null), userId);
         createdPromptIds.add(prompt.id());
 
-        ExecutionResponse created = executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null));
+        ExecutionResponse created =
+                executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null), userId);
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(5))
@@ -113,10 +124,12 @@ class ExecutionIntegrationTest {
     // LlmException only and re-running this test: it stayed RUNNING with finishedAt == null).
     @Test
     void unexpectedBugIsStillRecordedAsFailed() {
-        PromptResponse prompt = promptService.create(new CreatePromptRequest("Bug Test", null, "__BUG__", Set.of()));
+        PromptResponse prompt =
+                promptService.create(new CreatePromptRequest("Bug Test", null, "__BUG__", Set.of(), null), userId);
         createdPromptIds.add(prompt.id());
 
-        ExecutionResponse created = executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null));
+        ExecutionResponse created =
+                executionService.create(new CreateExecutionRequest(prompt.id(), 1, null, null), userId);
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(5))

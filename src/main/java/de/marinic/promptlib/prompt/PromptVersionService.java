@@ -21,10 +21,11 @@ public class PromptVersionService {
         this.promptVersionRepository = promptVersionRepository;
     }
 
-    public VersionResponse create(UUID promptId, CreateVersionRequest request) {
+    public VersionResponse create(UUID promptId, CreateVersionRequest request, UUID requesterId) {
         // Pessimistic lock: serializes concurrent "next version number" calculations for
         // the same prompt so two parallel requests can't compute the same version_no.
         Prompt prompt = findPromptForUpdateOrThrow(promptId);
+        PromptAccess.requireOwner(prompt, requesterId);
 
         int nextVersionNo = promptVersionRepository.findMaxVersionNo(promptId) + 1;
 
@@ -39,22 +40,30 @@ public class PromptVersionService {
     }
 
     @Transactional(readOnly = true)
-    public List<VersionResponse> list(UUID promptId) {
-        if (!promptRepository.existsById(promptId)) {
-            throw new NotFoundException("Prompt %s not found".formatted(promptId));
-        }
+    public List<VersionResponse> list(UUID promptId, UUID requesterId) {
+        Prompt prompt =
+                promptRepository
+                        .findById(promptId)
+                        .orElseThrow(() -> new NotFoundException("Prompt %s not found".formatted(promptId)));
+        PromptAccess.requireReadable(prompt, requesterId);
         return promptVersionRepository.findByPromptIdOrderByVersionNoDesc(promptId).stream()
                 .map(PromptMapper::toVersionResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public VersionResponse get(UUID promptId, int versionNo) {
+    public VersionResponse get(UUID promptId, int versionNo, UUID requesterId) {
+        Prompt prompt =
+                promptRepository
+                        .findById(promptId)
+                        .orElseThrow(() -> new NotFoundException("Prompt %s not found".formatted(promptId)));
+        PromptAccess.requireReadable(prompt, requesterId);
         return PromptMapper.toVersionResponse(findVersionOrThrow(promptId, versionNo));
     }
 
-    public PromptResponse activate(UUID promptId, int versionNo) {
+    public PromptResponse activate(UUID promptId, int versionNo, UUID requesterId) {
         Prompt prompt = findPromptForUpdateOrThrow(promptId);
+        PromptAccess.requireOwner(prompt, requesterId);
         findVersionOrThrow(promptId, versionNo);
 
         prompt.setCurrentVersionNo(versionNo);

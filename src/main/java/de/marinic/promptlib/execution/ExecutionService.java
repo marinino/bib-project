@@ -3,6 +3,7 @@ package de.marinic.promptlib.execution;
 import de.marinic.promptlib.common.error.NotFoundException;
 import de.marinic.promptlib.execution.dto.CreateExecutionRequest;
 import de.marinic.promptlib.execution.dto.ExecutionResponse;
+import de.marinic.promptlib.prompt.PromptAccess;
 import de.marinic.promptlib.prompt.PromptVersion;
 import de.marinic.promptlib.prompt.PromptVersionRepository;
 import java.util.List;
@@ -28,7 +29,7 @@ public class ExecutionService {
         this.eventPublisher = eventPublisher;
     }
 
-    public ExecutionResponse create(CreateExecutionRequest request) {
+    public ExecutionResponse create(CreateExecutionRequest request, UUID requesterId) {
         PromptVersion version =
                 promptVersionRepository
                         .findByPromptIdAndVersionNo(request.promptId(), request.versionNo())
@@ -37,6 +38,8 @@ public class ExecutionService {
                                         new NotFoundException(
                                                 "Version %d of prompt %s not found"
                                                         .formatted(request.versionNo(), request.promptId())));
+        // Lazy proxy, safe to touch here - we're inside this method's own transaction.
+        PromptAccess.requireReadable(version.getPrompt(), requesterId);
 
         Execution execution = new Execution();
         execution.setPromptVersion(version);

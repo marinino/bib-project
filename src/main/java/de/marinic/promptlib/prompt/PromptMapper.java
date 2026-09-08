@@ -21,6 +21,8 @@ public final class PromptMapper {
                 prompt.getDescription(),
                 prompt.getCurrentVersionNo(),
                 tagNames,
+                prompt.getOwnerId(),
+                prompt.getVisibility(),
                 prompt.getCreatedAt(),
                 prompt.getUpdatedAt());
     }

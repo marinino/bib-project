@@ -14,7 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import de.marinic.promptlib.common.error.NotFoundException;
 import de.marinic.promptlib.common.page.PageResponse;
+import de.marinic.promptlib.common.security.JwtService;
+import de.marinic.promptlib.common.security.SecurityConfig;
+import de.marinic.promptlib.common.security.TestPrincipals;
+import de.marinic.promptlib.common.security.UserDetailsServiceImpl;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
+import de.marinic.promptlib.user.UserRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -23,27 +28,45 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+// SecurityConfig (with @EnableWebSecurity) must be imported explicitly - @WebMvcTest excludes
+// plain @Configuration classes from its slice, and without @EnableWebSecurity present, Spring
+// never registers AuthenticationPrincipalArgumentResolver, so @AuthenticationPrincipal would
+// stay unresolved. The real filter chain has to run too (no addFilters = false): the
+// TestPrincipals.user(...) principal only reaches SecurityContextHolder via
+// SecurityContextHolderFilter, which is part of that chain.
 @WebMvcTest(PromptController.class)
+@Import(SecurityConfig.class)
 class PromptControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
     @MockitoBean private PromptService promptService;
 
+    // SecurityConfig's beans (JwtAuthenticationFilter, AuthenticationManager) need these to
+    // exist somewhere in the context to be constructed - never actually exercised since none
+    // of these tests send a real Authorization header.
+    @MockitoBean private JwtService jwtService;
+    @MockitoBean private UserRepository userRepository;
+    @MockitoBean private UserDetailsServiceImpl userDetailsService;
+
+    private final UUID userId = UUID.randomUUID();
+
     @Test
     void createReturns201WithLocationHeader() throws Exception {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();
         PromptResponse response =
-                new PromptResponse(id, "Test", "desc", 1, Set.of("cv"), now, now);
-        given(promptService.create(any())).willReturn(response);
+                new PromptResponse(id, "Test", "desc", 1, Set.of("cv"), userId, Visibility.PRIVATE, now, now);
+        given(promptService.create(any(), eq(userId))).willReturn(response);
 
         mockMvc.perform(
                         post("/api/v1/prompts")
+                                .with(TestPrincipals.user(userId))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
@@ -58,6 +81,7 @@ class PromptControllerTest {
     void createWithBlankTitleReturns400WithFieldErrors() throws Exception {
         mockMvc.perform(
                         post("/api/v1/prompts")
+                                .with(TestPrincipals.user(userId))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {"title":"","content":""}
@@ -70,6 +94,7 @@ class PromptControllerTest {
     void createWithMalformedJsonReturns400() throws Exception {
         mockMvc.perform(
                         post("/api/v1/prompts")
+                                .with(TestPrincipals.user(userId))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{not valid json"))
                 .andExpect(status().isBadRequest())
@@ -80,10 +105,10 @@ class PromptControllerTest {
     void getReturns200ForExistingPrompt() throws Exception {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();
-        given(promptService.get(eq(id)))
-                .willReturn(new PromptResponse(id, "Test", null, 1, Set.of(), now, now));
+        given(promptService.get(eq(id), eq(userId)))
+                .willReturn(new PromptResponse(id, "Test", null, 1, Set.of(), userId, Visibility.PRIVATE, now, now));
 
-        mockMvc.perform(get("/api/v1/prompts/{id}", id))
+        mockMvc.perform(get("/api/v1/prompts/{id}", id).with(TestPrincipals.user(userId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()));
     }
@@ -91,9 +116,10 @@ class PromptControllerTest {
     @Test
     void getReturns404ForMissingPrompt() throws Exception {
         UUID id = UUID.randomUUID();
-        given(promptService.get(eq(id))).willThrow(new NotFoundException("Prompt %s not found".formatted(id)));
+        given(promptService.get(eq(id), eq(userId)))
+                .willThrow(new NotFoundException("Prompt %s not found".formatted(id)));
 
-        mockMvc.perform(get("/api/v1/prompts/{id}", id))
+        mockMvc.perform(get("/api/v1/prompts/{id}", id).with(TestPrincipals.user(userId)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
     }
@@ -102,19 +128,23 @@ class PromptControllerTest {
     void deleteReturns204() throws Exception {
         UUID id = UUID.randomUUID();
 
-        mockMvc.perform(delete("/api/v1/prompts/{id}", id)).andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/v1/prompts/{id}", id).with(TestPrincipals.user(userId)))
+                .andExpect(status().isNoContent());
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void searchBindsQueryParamsAndReturnsPageResponse() throws Exception {
         Instant now = Instant.now();
-        PromptResponse prompt = new PromptResponse(UUID.randomUUID(), "Video", null, 1, Set.of("cv"), now, now);
+        PromptResponse prompt =
+                new PromptResponse(
+                        UUID.randomUUID(), "Video", null, 1, Set.of("cv"), userId, Visibility.PRIVATE, now, now);
         PageResponse<PromptResponse> page = new PageResponse<>(List.of(prompt), 0, 10, 1, 1);
-        given(promptService.search(any(), any(), any())).willReturn(page);
+        given(promptService.search(any(), any(), any(), any())).willReturn(page);
 
         mockMvc.perform(
                         get("/api/v1/prompts")
+                                .with(TestPrincipals.user(userId))
                                 .param("query", "video")
                                 .param("tags", "cv,comfyui")
                                 .param("page", "0")
@@ -125,7 +155,7 @@ class PromptControllerTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         ArgumentCaptor<Set<String>> tagsCaptor = ArgumentCaptor.forClass(Set.class);
-        verify(promptService).search(eq("video"), tagsCaptor.capture(), any());
+        verify(promptService).search(eq("video"), tagsCaptor.capture(), eq(userId), any());
         assertThat(tagsCaptor.getValue()).containsExactlyInAnyOrder("cv", "comfyui");
     }
 }

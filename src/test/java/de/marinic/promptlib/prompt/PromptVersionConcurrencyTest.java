@@ -7,10 +7,13 @@ import de.marinic.promptlib.prompt.dto.CreatePromptRequest;
 import de.marinic.promptlib.prompt.dto.CreateVersionRequest;
 import de.marinic.promptlib.prompt.dto.PromptResponse;
 import de.marinic.promptlib.prompt.dto.VersionResponse;
+import de.marinic.promptlib.user.TestUsers;
+import de.marinic.promptlib.user.UserRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -27,11 +31,14 @@ class PromptVersionConcurrencyTest {
 
     @Autowired private PromptService promptService;
     @Autowired private PromptVersionService promptVersionService;
+    @Autowired private UserRepository userRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
 
     @Test
     void concurrentVersionCreationProducesUniqueSequentialNumbers() throws Exception {
+        UUID userId = TestUsers.create(userRepository, passwordEncoder).getId();
         PromptResponse prompt =
-                promptService.create(new CreatePromptRequest("Concurrency Test", null, "v1", Set.of()));
+                promptService.create(new CreatePromptRequest("Concurrency Test", null, "v1", Set.of(), null), userId);
 
         int concurrentRequests = 10;
         ExecutorService executor = Executors.newFixedThreadPool(concurrentRequests);
@@ -43,7 +50,8 @@ class PromptVersionConcurrencyTest {
                                         () ->
                                                 promptVersionService.create(
                                                         prompt.id(),
-                                                        new CreateVersionRequest("content " + i, null, null)))
+                                                        new CreateVersionRequest("content " + i, null, null),
+                                                        userId))
                         .toList();
 
         List<Future<VersionResponse>> futures = executor.invokeAll(tasks);

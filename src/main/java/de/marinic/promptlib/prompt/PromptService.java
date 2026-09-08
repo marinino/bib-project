@@ -30,11 +30,13 @@ public class PromptService {
         this.tagRepository = tagRepository;
     }
 
-    public PromptResponse create(CreatePromptRequest request) {
+    public PromptResponse create(CreatePromptRequest request, UUID ownerId) {
         Prompt prompt = new Prompt();
         prompt.setTitle(request.title());
         prompt.setDescription(request.description());
         prompt.setCurrentVersionNo(1);
+        prompt.setOwnerId(ownerId);
+        prompt.setVisibility(request.visibility() != null ? request.visibility() : Visibility.PRIVATE);
         prompt.setTags(resolveTags(request.tags()));
 
         PromptVersion firstVersion = new PromptVersion();
@@ -48,12 +50,14 @@ public class PromptService {
     }
 
     @Transactional(readOnly = true)
-    public PromptResponse get(UUID id) {
-        return PromptMapper.toResponse(findOrThrow(id));
+    public PromptResponse get(UUID id, UUID requesterId) {
+        Prompt prompt = findOrThrow(id);
+        PromptAccess.requireReadable(prompt, requesterId);
+        return PromptMapper.toResponse(prompt);
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<PromptResponse> search(String query, Set<String> tags, Pageable pageable) {
+    public PageResponse<PromptResponse> search(String query, Set<String> tags, UUID requesterId, Pageable pageable) {
         // Spring Data's Specification.where()/.and() throw on null arguments (no longer a
         // "no-op" like in older versions), so optional filters must be combined manually.
         // fetchTags() always contributes (it has no "off" state), so the combined
@@ -62,6 +66,7 @@ public class PromptService {
                 Stream.of(
                                 PromptSpecifications.titleOrDescriptionContains(query),
                                 PromptSpecifications.hasAnyTag(tags),
+                                PromptSpecifications.visibleTo(requesterId),
                                 PromptSpecifications.fetchTags())
                         .filter(Objects::nonNull)
                         .reduce(Specification::and)
@@ -72,8 +77,9 @@ public class PromptService {
         return PageResponse.from(page, PromptMapper::toResponse);
     }
 
-    public PromptResponse update(UUID id, UpdatePromptRequest request) {
+    public PromptResponse update(UUID id, UpdatePromptRequest request, UUID requesterId) {
         Prompt prompt = findOrThrow(id);
+        PromptAccess.requireOwner(prompt, requesterId);
 
         if (request.title() != null) {
             prompt.setTitle(request.title());
@@ -84,13 +90,18 @@ public class PromptService {
         if (request.tags() != null) {
             prompt.setTags(resolveTags(request.tags()));
         }
+        if (request.visibility() != null) {
+            prompt.setVisibility(request.visibility());
+        }
 
         promptRepository.flush();
         return PromptMapper.toResponse(prompt);
     }
 
-    public void delete(UUID id) {
-        promptRepository.delete(findOrThrow(id));
+    public void delete(UUID id, UUID requesterId) {
+        Prompt prompt = findOrThrow(id);
+        PromptAccess.requireOwner(prompt, requesterId);
+        promptRepository.delete(prompt);
     }
 
     private Prompt findOrThrow(UUID id) {

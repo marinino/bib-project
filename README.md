@@ -228,6 +228,51 @@ nie enden.
 Stufe 4 gibt. Ein globaler Rate Limiter hätte die eigentliche Anforderung nicht erfüllt, deshalb bewusst
 verschoben statt vorgetäuscht.
 
+### Stufe 4.1 — Spring Security: Registrierung, Login, Ownership
+
+**JWT statt Session:** Login/Registrierung geben ein signiertes JWT zurück (`AuthService`,
+`JwtService`, HS256 über `io.jsonwebtoken:jjwt`), jeder weitere Request trägt es im
+`Authorization: Bearer <token>`-Header. `SecurityConfig` schaltet Sessions komplett ab
+(`SessionCreationPolicy.STATELESS`) und deaktiviert CSRF — CSRF schützt vor **ungewollten**
+Requests, die der Browser bei Cookie-basierter Session-Auth automatisch mitschickt; das gibt es
+hier nicht, der Client muss den Header selbst aktiv setzen.
+
+**Zwei getrennte Prinzipal-Wege, bewusst:** `UserDetailsServiceImpl.loadUserByUsername(email)`
+wird nur einmal gebraucht — beim Login, wenn `AuthenticationManager`/`DaoAuthenticationProvider`
+Email+Passwort (BCrypt) prüfen. `JwtAuthenticationFilter` läuft dagegen auf **jedem** Request und
+hat die User-ID schon direkt im Token (`sub`-Claim) — er lädt den `User` daher per ID über
+`UserRepository`, nicht nochmal über `UserDetailsService`. Beide Wege landen im selben
+`AppUserPrincipal` (implementiert `UserDetails`), aber "username" bedeutet in den beiden Fällen
+etwas anderes (Email vs. ID) — deshalb zwei Pfade statt einem überladenen.
+
+**Owner + Sichtbarkeit statt reiner Auth:** `prompt.owner_id` (FK auf `app_user`, nullable —
+Prompts aus Stufe 1–3 haben keinen Owner) plus `visibility` (`PRIVATE`/`PUBLIC`,
+`PromptAccess.requireReadable`/`requireOwner`, wiederverwendet von `PromptService`,
+`PromptVersionService` **und** `ExecutionService`, obwohl die beiden letzteren nie
+`PromptService` selbst aufrufen). Eine fehlende und eine fremde private Prompt-ID geben absichtlich
+denselben 404 zurück — ein 403 würde verraten, dass unter dieser ID überhaupt etwas Privates
+existiert. Nachweis (echter HTTP-Layer, zwei echte registrierte Nutzer, echtes Postgres):
+`PromptOwnershipIntegrationTest.privatePromptIsHiddenFromOthersAndVisibleOnceMadePublic`.
+
+**Stolperfalle beim `@WebMvcTest` der Controller:** Mit Spring Security auf dem Classpath wird
+`JwtAuthenticationFilter` als `Filter`-Bean automatisch Teil jedes `@WebMvcTest`-Slices (Boot zählt
+`Filter`-Implementierungen zu den slice-relevanten Typen) — sein Konstruktor braucht dann aber
+`JwtService`/`UserRepository`, die dort sonst nicht existieren. Erster Versuch,
+`addFilters = false` zu setzen, hat das zwar behoben, aber gleichzeitig
+`@AuthenticationPrincipal` kaputt gemacht: der über `SecurityMockMvcRequestPostProcessors.user(...)`
+gesetzte Principal erreicht `SecurityContextHolder` erst über `SecurityContextHolderFilter` — läuft
+die echte Filterkette gar nicht erst, bleibt der Controller-Parameter `null`, und zwei Tests fielen
+mit stillen Fehlbindungen statt sauberen Fehlern auf (einmal `NullPointerException`, einmal ein
+Mockito-Aufruf mit `null` statt der erwarteten User-ID — je nachdem, ob der Controller-Code den
+Principal direkt dereferenziert oder nur weiterreicht). Fix: `@Import(SecurityConfig.class)` plus
+echte Filterkette (kein `addFilters = false` mehr), mit `JwtService`/`UserRepository`/
+`UserDetailsServiceImpl` als `@MockitoBean`, da nie ein echtes Token durch die Tests geschickt wird.
+
+**Nicht umgesetzt:** Owner-/Sichtbarkeitsprüfung für `GET /executions` und `GET
+/executions/{id}` (nur `POST /executions` prüft, dass der Prompt für den Aufrufer lesbar ist,
+über `PromptAccess.requireReadable` auf `version.getPrompt()`) — bewusst kleiner Schnitt für
+diesen Commit, siehe möglicher Folgeschritt.
+
 ## Tests
 
 ```bash

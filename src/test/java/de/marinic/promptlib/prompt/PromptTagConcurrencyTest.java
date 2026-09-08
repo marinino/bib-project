@@ -6,17 +6,22 @@ import de.marinic.promptlib.TestcontainersConfiguration;
 import de.marinic.promptlib.prompt.dto.CreatePromptRequest;
 import de.marinic.promptlib.tag.Tag;
 import de.marinic.promptlib.tag.TagRepository;
+import de.marinic.promptlib.user.TestUsers;
+import de.marinic.promptlib.user.UserRepository;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * Regression test for the race condition in {@code PromptService.resolveTags()}: creating
@@ -31,6 +36,15 @@ class PromptTagConcurrencyTest {
 
     @Autowired private PromptService promptService;
     @Autowired private TagRepository tagRepository;
+    @Autowired private UserRepository userRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
+
+    private UUID userId;
+
+    @BeforeEach
+    void createOwner() {
+        userId = TestUsers.create(userRepository, passwordEncoder).getId();
+    }
 
     @Test
     void concurrentPromptsWithTheSameNewTagDoNotFailAndShareOneTagRow() throws Exception {
@@ -47,7 +61,9 @@ class PromptTagConcurrencyTest {
                                                             "Concurrent Tag Prompt " + i,
                                                             null,
                                                             "content",
-                                                            Set.of("brand-new-tag")));
+                                                            Set.of("brand-new-tag"),
+                                                            null),
+                                                    userId);
                                             return null;
                                         })
                         .toList();

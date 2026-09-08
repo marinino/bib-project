@@ -1,6 +1,34 @@
-### Prompt erstellen
+### Registrieren (liefert direkt ein JWT zurueck, kein separater Login noetig)
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "noah@example.com",
+  "password": "correct-horse-battery-staple"
+}
+
+### Login (Token danach unten als {{token}} in den Authorization-Header eintragen)
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "noah@example.com",
+  "password": "correct-horse-battery-staple"
+}
+
+### Falsches Passwort -> 401
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "noah@example.com",
+  "password": "falsch"
+}
+
+### Prompt erstellen (privat, Standard) - Authorization-Header aus dem Token oben setzen
 POST http://localhost:8080/api/v1/prompts
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "Video Prompt",
@@ -9,12 +37,28 @@ Content-Type: application/json
   "tags": ["comfyui", "cv"]
 }
 
+### Prompt erstellen (oeffentlich - fuer andere Nutzer les- und suchbar)
+POST http://localhost:8080/api/v1/prompts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Public Prompt",
+  "content": "Fuer alle sichtbar",
+  "visibility": "PUBLIC"
+}
+
+### Ohne Token -> 401
+GET http://localhost:8080/api/v1/prompts
+
 ### Prompt laden (ID aus der Antwort oben einsetzen)
 GET http://localhost:8080/api/v1/prompts/{{promptId}}
+Authorization: Bearer {{token}}
 
-### Prompt-Metadaten ändern
+### Prompt-Metadaten ändern (nur der Owner darf das, sonst 403)
 PATCH http://localhost:8080/api/v1/prompts/{{promptId}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "Video Prompt (aktualisiert)"
@@ -23,6 +67,7 @@ Content-Type: application/json
 ### Validierungsfehler provozieren
 POST http://localhost:8080/api/v1/prompts
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "",
@@ -32,18 +77,22 @@ Content-Type: application/json
 ### Alle Tags mit Anzahl
 GET http://localhost:8080/api/v1/tags
 
-### Suche: Volltext über Titel/Beschreibung
+### Suche: Volltext über Titel/Beschreibung (nur eigene + oeffentliche Treffer)
 GET http://localhost:8080/api/v1/prompts?query=video
+Authorization: Bearer {{token}}
 
 ### Suche: nach Tags filtern (Treffer = mind. eines der Tags)
 GET http://localhost:8080/api/v1/prompts?tags=comfyui,cv
+Authorization: Bearer {{token}}
 
 ### Suche: Query + Tags kombiniert, mit Pagination und Sortierung
 GET http://localhost:8080/api/v1/prompts?query=video&tags=comfyui&page=0&size=10&sort=updatedAt,desc
+Authorization: Bearer {{token}}
 
 ### Neue Version anlegen
 POST http://localhost:8080/api/v1/prompts/{{promptId}}/versions
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "content": "Ein Video von {{subject}}, cinematic style, 4k",
@@ -52,19 +101,24 @@ Content-Type: application/json
 
 ### Alle Versionen (absteigend)
 GET http://localhost:8080/api/v1/prompts/{{promptId}}/versions
+Authorization: Bearer {{token}}
 
 ### Einzelne Version
 GET http://localhost:8080/api/v1/prompts/{{promptId}}/versions/1
+Authorization: Bearer {{token}}
 
 ### Version aktivieren
 POST http://localhost:8080/api/v1/prompts/{{promptId}}/versions/2/activate
+Authorization: Bearer {{token}}
 
 ### Prompt löschen
 DELETE http://localhost:8080/api/v1/prompts/{{promptId}}
+Authorization: Bearer {{token}}
 
 ### Execution starten (nutzt die MockLlmClient, kein echter API-Key noetig)
 POST http://localhost:8080/api/v1/executions
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "promptId": "{{promptId}}",
@@ -73,13 +127,16 @@ Content-Type: application/json
 
 ### Execution-Status abfragen (ID aus der Antwort oben einsetzen)
 GET http://localhost:8080/api/v1/executions/{{executionId}}
+Authorization: Bearer {{token}}
 
 ### Execution-Historie fuer einen Prompt
 GET http://localhost:8080/api/v1/executions?promptId={{promptId}}
+Authorization: Bearer {{token}}
 
 ### Fehlerfall provozieren: MockLlmClient wirft bei "__FAIL__" im Content
 POST http://localhost:8080/api/v1/prompts
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "Fail Demo",
@@ -92,11 +149,12 @@ Content-Type: application/json
 ### 3.+: sofortiger Fail, kein einziger Aufruf mehr bei MockLlmClient (Latenz ~20ms statt ~200ms)
 POST http://localhost:8080/api/v1/executions
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "promptId": "{{promptId}}",
   "versionNo": 1
 }
 
-### Health-Check
+### Health-Check (oeffentlich, kein Token noetig)
 GET http://localhost:8080/actuator/health

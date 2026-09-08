@@ -4,6 +4,7 @@ import de.marinic.promptlib.tag.Tag;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 
 public final class PromptSpecifications {
@@ -19,6 +20,14 @@ public final class PromptSpecifications {
                 cb.or(
                         cb.like(cb.lower(root.get("title")), pattern),
                         cb.like(cb.lower(cb.coalesce(root.get("description"), "")), pattern));
+    }
+
+    /** Own prompts (any visibility) plus everyone else's public ones - never someone else's private prompt. */
+    public static Specification<Prompt> visibleTo(UUID requesterId) {
+        return (root, cq, cb) ->
+                cb.or(
+                        cb.equal(root.get("visibility"), Visibility.PUBLIC),
+                        cb.equal(root.get("ownerId"), requesterId));
     }
 
     public static Specification<Prompt> hasAnyTag(Set<String> tagNames) {
