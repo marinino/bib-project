@@ -81,7 +81,7 @@ class ExecutionControllerTest {
         UUID id = UUID.randomUUID();
         UUID promptId = UUID.randomUUID();
         Instant now = Instant.now();
-        given(executionService.get(eq(id)))
+        given(executionService.get(eq(id), eq(userId)))
                 .willReturn(
                         new ExecutionResponse(
                                 id, promptId, 1, "SUCCEEDED", "gpt-4o-mini", "output", 42, 3, 5, null, now, now));
@@ -95,7 +95,8 @@ class ExecutionControllerTest {
     @Test
     void getReturns404ForMissingExecution() throws Exception {
         UUID id = UUID.randomUUID();
-        given(executionService.get(eq(id))).willThrow(new NotFoundException("Execution %s not found".formatted(id)));
+        given(executionService.get(eq(id), eq(userId)))
+                .willThrow(new NotFoundException("Execution %s not found".formatted(id)));
 
         mockMvc.perform(get("/api/v1/executions/{id}", id).with(TestPrincipals.user(userId)))
                 .andExpect(status().isNotFound());
@@ -105,7 +106,7 @@ class ExecutionControllerTest {
     void listReturnsExecutionsForPrompt() throws Exception {
         UUID promptId = UUID.randomUUID();
         Instant now = Instant.now();
-        given(executionService.listByPrompt(promptId))
+        given(executionService.listByPrompt(promptId, userId))
                 .willReturn(
                         List.of(
                                 new ExecutionResponse(

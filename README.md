@@ -282,10 +282,13 @@ vor dem Schreiben landet der Servlet-Container-Default (`ISO-8859-1`) im `Conten
 ebenfalls per `curl` verglichen mit dem Controller-Pfad, der implizit UTF-8 nutzt.
 Regressionstest: `AuthFlowIntegrationTest.protectedEndpointWithoutTokenReturns401AsProblemDetail`.
 
-**Nicht umgesetzt:** Owner-/Sichtbarkeitsprüfung für `GET /executions` und `GET
-/executions/{id}` (nur `POST /executions` prüft, dass der Prompt für den Aufrufer lesbar ist,
-über `PromptAccess.requireReadable` auf `version.getPrompt()`) — bewusst kleiner Schnitt für
-diesen Commit, siehe möglicher Folgeschritt.
+**Nachgezogen (war zunächst bewusst ausgelassen):** `GET /executions/{id}` und `GET
+/executions?promptId=` prüften anfangs gar nicht, ob der Aufrufer den zugrunde liegenden Prompt
+überhaupt lesen darf — nur `POST /executions` tat das. `ExecutionService.get()` prüft jetzt über
+`execution.getPromptVersion().getPrompt()` (derselbe Lazy-Proxy-Trick wie in `create()`),
+`listByPrompt()` lädt dafür zusätzlich `PromptRepository` (nach demselben Muster wie
+`PromptVersionService.list()`). Regressionstest (echtes HTTP, zwei echte Nutzer):
+`ExecutionOwnershipIntegrationTest.executionsOfAPrivatePromptAreOnlyVisibleToItsOwner`.
 
 ## Tests
 

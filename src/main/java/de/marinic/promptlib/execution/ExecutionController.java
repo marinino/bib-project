@@ -35,12 +35,13 @@ public class ExecutionController {
     }
 
     @GetMapping("/{id}")
-    public ExecutionResponse get(@PathVariable UUID id) {
-        return executionService.get(id);
+    public ExecutionResponse get(@PathVariable UUID id, @AuthenticationPrincipal AppUserPrincipal principal) {
+        return executionService.get(id, principal.getId());
     }
 
     @GetMapping
-    public List<ExecutionResponse> list(@RequestParam UUID promptId) {
-        return executionService.listByPrompt(promptId);
+    public List<ExecutionResponse> list(
+            @RequestParam UUID promptId, @AuthenticationPrincipal AppUserPrincipal principal) {
+        return executionService.listByPrompt(promptId, principal.getId());
     }
 }

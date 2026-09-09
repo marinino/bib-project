@@ -3,7 +3,9 @@ package de.marinic.promptlib.execution;
 import de.marinic.promptlib.common.error.NotFoundException;
 import de.marinic.promptlib.execution.dto.CreateExecutionRequest;
 import de.marinic.promptlib.execution.dto.ExecutionResponse;
+import de.marinic.promptlib.prompt.Prompt;
 import de.marinic.promptlib.prompt.PromptAccess;
+import de.marinic.promptlib.prompt.PromptRepository;
 import de.marinic.promptlib.prompt.PromptVersion;
 import de.marinic.promptlib.prompt.PromptVersionRepository;
 import java.util.List;
@@ -18,14 +20,17 @@ public class ExecutionService {
 
     private final ExecutionRepository executionRepository;
     private final PromptVersionRepository promptVersionRepository;
+    private final PromptRepository promptRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public ExecutionService(
             ExecutionRepository executionRepository,
             PromptVersionRepository promptVersionRepository,
+            PromptRepository promptRepository,
             ApplicationEventPublisher eventPublisher) {
         this.executionRepository = executionRepository;
         this.promptVersionRepository = promptVersionRepository;
+        this.promptRepository = promptRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -56,12 +61,21 @@ public class ExecutionService {
     }
 
     @Transactional(readOnly = true)
-    public ExecutionResponse get(UUID id) {
-        return ExecutionMapper.toResponse(findOrThrow(id));
+    public ExecutionResponse get(UUID id, UUID requesterId) {
+        Execution execution = findOrThrow(id);
+        // Lazy proxies, safe to touch here - same reasoning as create(): still inside this
+        // method's own transaction.
+        PromptAccess.requireReadable(execution.getPromptVersion().getPrompt(), requesterId);
+        return ExecutionMapper.toResponse(execution);
     }
 
     @Transactional(readOnly = true)
-    public List<ExecutionResponse> listByPrompt(UUID promptId) {
+    public List<ExecutionResponse> listByPrompt(UUID promptId, UUID requesterId) {
+        Prompt prompt =
+                promptRepository
+                        .findById(promptId)
+                        .orElseThrow(() -> new NotFoundException("Prompt %s not found".formatted(promptId)));
+        PromptAccess.requireReadable(prompt, requesterId);
         return executionRepository.findByPromptVersion_Prompt_IdOrderByCreatedAtDesc(promptId).stream()
                 .map(ExecutionMapper::toResponse)
                 .toList();

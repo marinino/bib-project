@@ -82,11 +82,11 @@ class ExecutionIntegrationTest {
                 .atMost(Duration.ofSeconds(5))
                 .untilAsserted(
                         () -> {
-                            ExecutionResponse current = executionService.get(created.id());
+                            ExecutionResponse current = executionService.get(created.id(), userId);
                             assertThat(current.status()).isEqualTo("SUCCEEDED");
                         });
 
-        ExecutionResponse finished = executionService.get(created.id());
+        ExecutionResponse finished = executionService.get(created.id(), userId);
         assertThat(finished.output()).isEqualTo("[mock response to] Sag hallo zu {{name}}");
         assertThat(finished.tokensIn()).isGreaterThan(0);
         assertThat(finished.tokensOut()).isGreaterThan(0);
@@ -107,11 +107,11 @@ class ExecutionIntegrationTest {
                 .atMost(Duration.ofSeconds(5))
                 .untilAsserted(
                         () -> {
-                            ExecutionResponse current = executionService.get(created.id());
+                            ExecutionResponse current = executionService.get(created.id(), userId);
                             assertThat(current.status()).isEqualTo("FAILED");
                         });
 
-        ExecutionResponse finished = executionService.get(created.id());
+        ExecutionResponse finished = executionService.get(created.id(), userId);
         assertThat(finished.errorMessage()).contains("simulated a failure");
         assertThat(finished.finishedAt()).isNotNull();
     }
@@ -135,11 +135,11 @@ class ExecutionIntegrationTest {
                 .atMost(Duration.ofSeconds(5))
                 .untilAsserted(
                         () -> {
-                            ExecutionResponse current = executionService.get(created.id());
+                            ExecutionResponse current = executionService.get(created.id(), userId);
                             assertThat(current.status()).isEqualTo("FAILED");
                         });
 
-        ExecutionResponse finished = executionService.get(created.id());
+        ExecutionResponse finished = executionService.get(created.id(), userId);
         assertThat(finished.errorMessage()).contains("Simulated unexpected bug");
         assertThat(finished.finishedAt()).isNotNull();
     }
