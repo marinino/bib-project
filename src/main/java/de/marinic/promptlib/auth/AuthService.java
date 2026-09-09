@@ -34,9 +34,11 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
         // Delegates the actual credential check to Spring Security's AuthenticationManager
         // (DaoAuthenticationProvider -> UserDetailsServiceImpl + BCrypt comparison). Throws
-        // BadCredentialsException on mismatch, which GlobalExceptionHandler's generic
-        // Exception fallback would turn into a 500 - handled explicitly in AuthController
-        // instead so a wrong password correctly comes back as 401.
+        // BadCredentialsException (an AuthenticationException) on mismatch - caught by
+        // GlobalExceptionHandler.handleAuthentication(), not by the security filter chain,
+        // since this authenticate() call happens inside a controller, not during request
+        // authorization. Without that handler it would fall through to the generic
+        // Exception -> 500 fallback instead of a proper 401.
         Authentication authentication =
                 authenticationManager.authenticate(
                         new UsernamePasswordAuthenticationToken(
