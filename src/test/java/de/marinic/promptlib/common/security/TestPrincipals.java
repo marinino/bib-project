@@ -7,10 +7,12 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 /**
  * For @WebMvcTest controller tests: builds a MockMvc RequestPostProcessor that puts an
  * AppUserPrincipal into the SecurityContext before the request is dispatched, so
- * @AuthenticationPrincipal resolves in the controller under test - independent of whether the
- * real Spring Security filter chain runs (these tests use addFilters = false, since
- * JwtAuthenticationFilter's own dependencies like UserRepository live outside a @WebMvcTest
- * slice).
+ * @AuthenticationPrincipal resolves in the controller under test. This has to go through the
+ * real security filter chain (SecurityConfig imported, no addFilters = false) - an earlier
+ * version disabled the filters to sidestep JwtAuthenticationFilter's dependencies living
+ * outside the slice, but that also broke this post-processor: it only reaches
+ * SecurityContextHolder via SecurityContextHolderFilter, which never runs when filters are
+ * off. Fixed by mocking JwtAuthenticationFilter's dependencies instead of skipping filters.
  */
 public final class TestPrincipals {
 
