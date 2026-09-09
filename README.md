@@ -3,6 +3,9 @@
 Backend-Übungsprojekt zum Auffrischen von Java, Spring Boot und Backend-Grundlagen.
 Verwaltung, Versionierung und Suche von Prompts über eine REST-API.
 
+# Hinweis zur Entstehung
+Ein Lernprojekt zum Auffrischen von Java und Spring Boot. Bei der Umsetzung habe ich KI-Werkzeuge eingesetzt — für Recherche, als Sparringspartner bei Entwurfsentscheidungen und für Boilerplate. Die unten dokumentierten Entscheidungen und Trade-offs habe ich jeweils selbst nachvollzogen und, wo es um konkretes Verhalten ging, live überprüft statt sie zu übernehmen.
+
 Der vollständige Feature- und Umsetzungsplan steht in [promptlib-featureplan.md](promptlib-featureplan.md).
 
 ## Setup
