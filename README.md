@@ -19,6 +19,13 @@ docker compose up -d
 
 Manuelle Requests: [requests/prompts.http](requests/prompts.http).
 
+Optional das Demo-Frontend dazu (siehe [Frontend](#frontend-stufe-5)):
+
+```bash
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
 ## Architektur
 
 ```
@@ -29,6 +36,44 @@ Controller → Service → Repository (+ Specification) → Entity → PostgreSQ
 - **Service** kapselt Fachlogik und Transaktionsgrenzen, mappt Entities → DTOs *innerhalb* der Transaktion
   (wegen `spring.jpa.open-in-view=false` — sonst `LazyInitializationException`)
 - **Repository** kennt nur Datenzugriff (`JpaRepository`, `JpaSpecificationExecutor`)
+
+## Frontend (Stufe 5)
+
+`frontend/` enthält ein bewusst schmuckloses React-plus-Vite-UI (`npm --prefix frontend run dev`,
+danach [localhost:5173](http://localhost:5173)). Es ist **kein** eigenständiges Produkt, sondern
+eine Bedienoberfläche für die API: Jedes Bedienelement gehört zu genau einem Endpoint, und neben
+jedem steht ein kurzer Kasten, der erklärt, welche Backend-Entscheidung dahintersteckt — Ownership
+und Sichtbarkeit, Pessimistic Locking bei der Versionsnummer, `202 Accepted` plus Polling, das
+Catch-all-Netz im `ExecutionRunner`, Retry und Circuit Breaker.
+
+Zwei Dinge machen die API dabei sichtbar, die eine normale Oberfläche gerade versteckt:
+
+- **Ein Request-Log** in der Seitenspalte protokolliert jeden Aufruf mit Methode, Pfad,
+  Statuscode, Dauer und beiden JSON-Bodies. Damit sind Details prüfbar statt behauptet: das
+  `202` beim Start einer Execution gefolgt von `200`-Polls mit wechselndem Status, der
+  partielle `PATCH`-Body beim Umschalten der Sichtbarkeit, das `404` (nicht `403`) bei einem
+  fremden privaten Prompt, die Feldfehler-Liste im `ProblemDetail` bei Validierungsfehlern.
+- **Ein Knopf „Request ohne Token senden"** provoziert absichtlich ein `401` aus der
+  Security-Filterkette — die Stelle, an der Spring Securitys Default einen leeren Body geliefert
+  hätte und `ProblemDetailSecurityHandlers` jetzt dasselbe JSON schreibt wie jeder andere Fehler.
+
+Ein kleines Actuator-Panel liest zusätzlich `executor.active`/`executor.completed` (getaggt mit
+`executionTaskExecutor`) und `hikaricp.connections.active`/`.idle`. Damit ist die Aussage aus
+Stufe 3 nachprüfbar statt behauptet: Während einer Ausführung arbeitet ein Executor-Thread,
+während die aktiven DB-Connections bei null bleiben — es ist eben keine Transaktion offen,
+solange der LLM-Call läuft. Der Circuit-Breaker-Zustand ließe sich genauso anzeigen, aber
+Resilience4j registriert seine Metriken hier nicht in der Micrometer-Registry (dafür fehlt
+`resilience4j-micrometer`); im UI wird er deshalb über die `errorMessage` einer fehlgeschlagenen
+Execution sichtbar gemacht statt über eine Metrik, die es nicht gibt.
+
+**Am Backend wurde dafür keine Zeile geändert.** Der Vite-Dev-Server proxyt `/api` und `/actuator`
+auf Port 8080, damit läuft alles unter derselben Origin und es braucht keine CORS-Konfiguration,
+die es nur wegen dieses Demo-UIs gäbe. Abhängigkeiten sind nur React, Vite und TypeScript — kein
+UI-Framework, kein Router, keine State-Bibliothek, kein CSS-Framework, damit der Ordner klein
+bleibt und der Schwerpunkt des Projekts erkennbar auf dem Backend liegt. Die TypeScript-Typen in
+`frontend/src/api/types.ts` sind absichtlich von Hand geschrieben statt aus einer OpenAPI-Spec
+generiert: so steht der konsumierte Vertrag sichtbar im Repo, statt in einem Generatorlauf zu
+verschwinden.
 
 ## Entscheidungen und Trade-offs
 
