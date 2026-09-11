@@ -302,6 +302,16 @@ denselben 404 zurück — ein 403 würde verraten, dass unter dieser ID überhau
 existiert. Nachweis (echter HTTP-Layer, zwei echte registrierte Nutzer, echtes Postgres):
 `PromptOwnershipIntegrationTest.privatePromptIsHiddenFromOthersAndVisibleOnceMadePublic`.
 
+Für **Schreibzugriffe** (`PATCH`/`DELETE` auf einen Prompt, neue Version anlegen, Version
+aktivieren) gilt diese Tarnung bewusst **nicht**: `requireOwner` antwortet auch bei einem fremden
+privaten Prompt mit `403` und verrät damit, dass die ID existiert. Das ist eine abgewogene
+Entscheidung, keine Lücke — Prompt-IDs sind zufällige UUIDs und damit nicht enumerierbar, ein
+Angreifer erfährt also nur etwas über eine ID, die er ohnehin schon besitzt. Im Gegenzug bekommt
+jeder Schreibpfad eine ehrliche Antwort ("dir gehört das nicht") statt eines `404`, das auch bei
+einer schlicht vertippten ID käme und gegen eine laufende API deutlich schwerer zu debuggen wäre.
+`requireOwner` darf deshalb ausdrücklich **nicht** zusätzlich mit `requireReadable` abgesichert
+werden — das würde den getesteten `403` still in einen `404` verwandeln.
+
 **Stolperfalle beim `@WebMvcTest` der Controller:** Mit Spring Security auf dem Classpath wird
 `JwtAuthenticationFilter` als `Filter`-Bean automatisch Teil jedes `@WebMvcTest`-Slices (Boot zählt
 `Filter`-Implementierungen zu den slice-relevanten Typen) — sein Konstruktor braucht dann aber
