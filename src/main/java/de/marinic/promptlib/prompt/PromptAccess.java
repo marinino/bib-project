@@ -45,7 +45,6 @@ public final class PromptAccess {
      * Revisit only if prompt ids ever stop being unguessable.
      */
     public static void requireOwner(Prompt prompt, UUID requesterId) {
-        requireReadable(prompt, requesterId)
         if (!requesterId.equals(prompt.getOwnerId())) {
             throw new ForbiddenException("You do not own prompt %s".formatted(prompt.getId()));
         }
